@@ -411,7 +411,6 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 // If an error occurs while reading the page, it returns an error.
 // Note: These routines may fail if deletions are not accounted for, due to an ndbm bug.
 func (db *DBM) FirstKey() (Datum, error) {
-
 	// start at page 0
 	if err := seekRead(db.pagf, offPag(0), io.SeekStart, db.pag.buf[:]); err != nil {
 		return Nullitem, err

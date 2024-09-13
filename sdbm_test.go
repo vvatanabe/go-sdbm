@@ -394,7 +394,6 @@ func TestDBM_RDOnlyDBM(t *testing.T) {
 	if !errors.Is(err2, sdbm.ErrDBMRDOnly) {
 		t.Errorf("Store() error = %v", err2)
 	}
-
 }
 
 func TestDBM_WRONLYDBM(t *testing.T) {
