@@ -1,6 +1,6 @@
 # go-sdbm
 
- [![Go](https://github.com/vvatanabe/go-sdbm/actions/workflows/go.yml/badge.svg)](https://github.com/vvatanabe/go-sdbm/actions/workflows/go.yml) [![Go Report Card](https://goreportcard.com/badge/github.com/vvatanabe/go-sdbm)](https://goreportcard.com/report/github.com/vvatanabe/go-sdbm) [![Go Reference](https://pkg.go.dev/badge/github.com/vvatanabe/go-sdbm.svg)](https://pkg.go.dev/github.com/vvatanabe/go-sdbm)
+ [![Go](https://github.com/vvatanabe/go-sdbm/actions/workflows/go.yml/badge.svg)](https://github.com/vvatanabe/go-sdbm/actions/workflows/go.yml) [![codecov](https://codecov.io/github/vvatanabe/go-sdbm/graph/badge.svg?token=VB49CF4XLW)](https://codecov.io/github/vvatanabe/go-sdbm) [![Go Report Card](https://goreportcard.com/badge/github.com/vvatanabe/go-sdbm)](https://goreportcard.com/report/github.com/vvatanabe/go-sdbm) [![Go Reference](https://pkg.go.dev/badge/github.com/vvatanabe/go-sdbm.svg)](https://pkg.go.dev/github.com/vvatanabe/go-sdbm)
 
 go-sdbm is a pure Go implementation of the classic SDBM key-value store.
 
