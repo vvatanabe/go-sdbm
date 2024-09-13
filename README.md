@@ -36,54 +36,54 @@ Below is an example demonstrating basic usage of the `sdbm` package:
 package main
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 
-    "github.com/vvatanabe/go-sdbm"
+	"github.com/vvatanabe/go-sdbm"
 )
 
 func main() {
-    // Open the database file (creates it if it doesn't exist)
-    db, err := sdbm.Open("mydatabase", os.O_RDWR|os.O_CREATE, 0644)
-    if err != nil {
-        panic(err)
-    }
-    defer db.Close()
+	// Open the database file (creates it if it doesn't exist)
+	db, err := sdbm.Open("mydatabase", os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
 
-    // Create key and value data
-    key := sdbm.Datum("mykey")
-    value := sdbm.Datum("myvalue")
+	// Create key and value data
+	key := sdbm.Datum("mykey")
+	value := sdbm.Datum("myvalue")
 
-    // Store the key-value pair in the database
-    success, err := db.Store(key, value, sdbm.StoreREPLACE)
-    if err != nil {
-        panic(err)
-    }
-    if success {
-        fmt.Println("Key-value pair stored successfully.")
-    }
+	// Store the key-value pair in the database
+	success, err := db.Store(key, value, sdbm.StoreREPLACE)
+	if err != nil {
+		panic(err)
+	}
+	if success {
+		fmt.Println("Key-value pair stored successfully.")
+	}
 
-    // Fetch the value associated with the key
-    fetchedValue, err := db.Fetch(key)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("Fetched Value: %s\n", fetchedValue)
+	// Fetch the value associated with the key
+	fetchedValue, err := db.Fetch(key)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Fetched Value: %s\n", fetchedValue)
 
-    // Delete the key-value pair from the database
-    deleted, err := db.Delete(key)
-    if err != nil {
-        panic(err)
-    }
-    if deleted {
-        fmt.Println("Key-value pair deleted successfully.")
-    }
+	// Delete the key-value pair from the database
+	deleted, err := db.Delete(key)
+	if err != nil {
+		panic(err)
+	}
+	if deleted {
+		fmt.Println("Key-value pair deleted successfully.")
+	}
 
-    // First keys in the database
-    key, err = db.FirstKey()
-    if err != nil {
-        panic(err)
-    }
+	// First keys in the database
+	key, err = db.FirstKey()
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("FirstKey: %s\n", key)
 
 	// Next keys in the database
