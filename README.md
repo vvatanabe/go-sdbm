@@ -1,5 +1,7 @@
 # go-sdbm
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/vvatanabe/go-sdbm)](https://goreportcard.com/report/github.com/vvatanabe/go-sdbm)
+
 go-sdbm is a pure Go implementation of the classic SDBM key-value store.
 
 ## About SDBM
