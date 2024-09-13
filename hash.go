@@ -6,7 +6,7 @@ package sdbm
 // use: 65599	nice.
 // 65587   even better.
 func Hash(data []byte) int64 {
-	var hash uint64 = 0
+	var hash uint64
 	for i := 0; i < len(data); i++ {
 		hash = uint64(data[i]) + 65599*hash
 	}
