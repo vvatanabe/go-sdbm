@@ -269,9 +269,8 @@ func (p *Page) setIno(i int, val uint16) {
 func binaryUint16(b []byte) uint16 {
 	if isLE {
 		return binary.LittleEndian.Uint16(b)
-	} else {
-		return binary.BigEndian.Uint16(b)
 	}
+	return binary.BigEndian.Uint16(b)
 }
 
 func binaryPutUint16(b []byte, v uint16) {
