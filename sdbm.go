@@ -430,7 +430,7 @@ func (db *DBM) NextKey() (Datum, error) {
 	return db.getNext()
 }
 
-// all important binary trie traversal
+// all important binary trie traversal.
 func (db *DBM) getPage(hash int64) error {
 	var dbit, hbit int64
 	for dbit < db.maxbno && db.getDBit(dbit) {
@@ -518,7 +518,7 @@ func (db *DBM) setDBit(dbit int64) error {
 }
 
 // getNext - get the next key in the page, and if done with
-// the page, try the next page in sequence
+// the page, try the next page in sequence.
 func (db *DBM) getNext() (Datum, error) {
 	var key Datum
 
