@@ -4,16 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"unsafe"
 )
-
-var isLE bool
-
-func init() {
-	var i int16 = 0x0102
-	b := (*[2]byte)(unsafe.Pointer(&i))
-	isLE = b[0] == 0x02
-}
 
 /*
  * page format:
@@ -81,7 +72,7 @@ func (p *Page) PutPair(key Datum, val Datum) {
 	p.setIno(n+2, uint16(off))
 
 	// adjust item count
-	p.setIno(0, uint16(n+2))
+	p.setN(uint16(n + 2))
 }
 
 // GetPair retrieves the value corresponding to a given key from the page.
@@ -176,7 +167,7 @@ func (p *Page) DelPair(key Datum) bool {
 			i++
 		}
 	}
-	p.setIno(0, p.getN()-2)
+	p.setN(p.getN() - 2)
 	return true
 }
 
@@ -258,25 +249,14 @@ func (p *Page) getN() uint16 {
 	return p.getIno(0)
 }
 
+func (p *Page) setN(val uint16) {
+	p.setIno(0, val)
+}
+
 func (p *Page) getIno(i int) uint16 {
-	return binaryUint16(p.buf[i*2 : i*2+2])
+	return binary.LittleEndian.Uint16(p.buf[i*2 : i*2+2])
 }
 
 func (p *Page) setIno(i int, val uint16) {
-	binaryPutUint16(p.buf[i*2:], val)
-}
-
-func binaryUint16(b []byte) uint16 {
-	if isLE {
-		return binary.LittleEndian.Uint16(b)
-	}
-	return binary.BigEndian.Uint16(b)
-}
-
-func binaryPutUint16(b []byte, v uint16) {
-	if isLE {
-		binary.LittleEndian.PutUint16(b, v)
-	} else {
-		binary.BigEndian.PutUint16(b, v)
-	}
+	binary.LittleEndian.PutUint16(p.buf[i*2:], val)
 }
