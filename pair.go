@@ -208,7 +208,7 @@ func (p *Page) SplPage(newPag *Page, sbit int64) {
 		val = cur.buf[valOff:keyOff]
 
 		// select the page pointer (by looking at sbit) and insert
-		if exHash(key)&sbit != 0 {
+		if Hash(key)&sbit != 0 {
 			newPag.PutPair(key, val)
 		} else {
 			p.PutPair(key, val)

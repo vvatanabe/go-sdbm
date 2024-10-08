@@ -71,10 +71,6 @@ func bad(x Datum) bool {
 	return x == nil
 }
 
-func exHash(item Datum) int64 {
-	return Hash(item)
-}
-
 func wrapIOErr(op, path string, err error) error {
 	return &IOError{Op: op, Path: path, Err: err}
 }
@@ -247,7 +243,7 @@ func (db *DBM) Fetch(key Datum) (Datum, error) {
 		return Nullitem, ErrInvalidArgument
 	}
 
-	hash := exHash(key)
+	hash := Hash(key)
 	if err := db.getPage(hash); err != nil {
 		return Nullitem, err
 	}
@@ -266,7 +262,7 @@ func (db *DBM) Delete(key Datum) (bool, error) {
 		return false, ErrDBMRDOnly
 	}
 
-	hash := exHash(key)
+	hash := Hash(key)
 	if err := db.getPage(hash); err != nil {
 		return false, err
 	}
@@ -302,7 +298,7 @@ func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
 		return false, ErrInvalidArgument
 	}
 
-	hash := exHash(key)
+	hash := Hash(key)
 	if err := db.getPage(hash); err != nil {
 		return false, err
 	}
@@ -409,7 +405,7 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 // FirstKey retrieves the first key in the database.
 // This function initializes the reading of the first page (page 0) and sets the current pointers (pagbno, blkptr, keyptr) to 0.
 // If an error occurs while reading the page, it returns an error.
-// Note: These routines may fail if deletions are not accounted for, due to an ndbm bug.
+// Note: These routines may fail if deletions are not accounted for, due to a ndbm bug.
 func (db *DBM) FirstKey() (Datum, error) {
 	// start at page 0
 	if err := seekRead(db.pagf, offPag(0), io.SeekStart, db.pag.buf[:]); err != nil {
@@ -424,7 +420,7 @@ func (db *DBM) FirstKey() (Datum, error) {
 
 // NextKey retrieves the next key in the database after FirstKey or after the last key retrieved by a previous call to NextKey.
 // If the current page has more keys, it returns the next one; otherwise, it moves to the next page to continue searching for keys.
-// Note: These routines may fail if deletions are not accounted for, due to an ndbm bug.
+// Note: These routines may fail if deletions are not accounted for, due to a ndbm bug.
 func (db *DBM) NextKey() (Datum, error) {
 	return db.getNext()
 }
@@ -468,6 +464,10 @@ func (db *DBM) getPage(hash int64) error {
 	}
 
 	return nil
+}
+
+type Dir struct {
+	buf [DBLKSIZ]byte // directory file block buffer
 }
 
 func (db *DBM) getDBit(dbit int64) bool {
