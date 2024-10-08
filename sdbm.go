@@ -67,10 +67,6 @@ func (e *IOError) Unwrap() error {
 	return e.Err
 }
 
-func bad(x Datum) bool {
-	return x == nil
-}
-
 func wrapIOErr(op, path string, err error) error {
 	return &IOError{Op: op, Path: path, Err: err}
 }
@@ -239,7 +235,7 @@ func (db *DBM) Close() error {
 // Fetch retrieves the value associated with the given key from the database.
 // It returns the value and an error if the key is invalid or if there is a problem accessing the page.
 func (db *DBM) Fetch(key Datum) (Datum, error) {
-	if bad(key) {
+	if key == nil {
 		return Nullitem, ErrInvalidArgument
 	}
 
@@ -255,7 +251,7 @@ func (db *DBM) Fetch(key Datum) (Datum, error) {
 // It returns a boolean indicating success or failure, and an error if the key is invalid,
 // the database is read-only, or there is a problem accessing the page.
 func (db *DBM) Delete(key Datum) (bool, error) {
-	if bad(key) {
+	if key == nil {
 		return false, ErrInvalidArgument
 	}
 	if db.rdonly {
@@ -283,7 +279,7 @@ func (db *DBM) Delete(key Datum) (bool, error) {
 // If StoreSEEDUPS is specified, duplicates are not allowed.
 // It returns a boolean indicating success and an error if the operation fails or if the database is read-only.
 func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
-	if bad(key) {
+	if key == nil {
 		return false, ErrInvalidArgument
 	}
 
