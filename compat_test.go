@@ -326,10 +326,10 @@ func TestPageOps_ChkPageCompatibility(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-6 Tests (internal access needed)
+// Tests (internal access needed)
 // ============================================================================
 
-func TestPageOps_BUG6_OddEntryCount(t *testing.T) {
+func TestPageOps_OddEntryCount(t *testing.T) {
 	// Create a corrupted page with odd entry count
 	p := &Page{}
 	// Insert two entries normally
@@ -351,7 +351,7 @@ func TestPageOps_BUG6_OddEntryCount(t *testing.T) {
 	p.SplPage(newPag, 1)
 }
 
-func TestPageOps_BUG6_ChkPageOddEntries(t *testing.T) {
+func TestPageOps_ChkPageOddEntries(t *testing.T) {
 	p := &Page{}
 	p.PutPair(Datum("key1"), Datum("val1"))
 

@@ -183,10 +183,10 @@ func TestDB_GoldenFile_BinaryKeys_Iteration(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-1: getNext blkptr increment missing
+// getNext blkptr increment missing
 // ============================================================================
 
-func TestDB_BUG1_BasicIteration(t *testing.T) {
+func TestDB_BasicIteration(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug1_basic")
 
@@ -230,7 +230,7 @@ func TestDB_BUG1_BasicIteration(t *testing.T) {
 	}
 }
 
-func TestDB_BUG1_IterationWithInterleavedFetch(t *testing.T) {
+func TestDB_IterationWithInterleavedFetch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug1")
 
@@ -259,21 +259,21 @@ func TestDB_BUG1_IterationWithInterleavedFetch(t *testing.T) {
 	// Fetch overwrites the page buffer, so some keys from the Fetch page may be returned
 	// as duplicates, and some keys from the original page may be lost.
 	// The key invariant tested here is that iteration TERMINATES (blkptr advances correctly)
-	// rather than looping infinitely (which was the BUG-1 symptom).
+	// rather than looping infinitely (which was the symptom).
 	seen := make(map[string]bool)
 	key, err := db.FirstKey()
 	if err != nil {
 		t.Fatalf("FirstKey: %v", err)
 	}
 
-	// Safety limit to prevent infinite loop (BUG-1 causes blkptr to not advance)
+	// Safety limit to prevent infinite loop (causes blkptr to not advance)
 	const maxIterations = numEntries * 20
 	iterations := 0
 
 	for key != nil {
 		iterations++
 		if iterations > maxIterations {
-			t.Fatalf("Iteration exceeded safety limit (%d) — likely stuck due to blkptr not advancing (BUG-1)", maxIterations)
+			t.Fatalf("Iteration exceeded safety limit (%d) — likely stuck due to blkptr not advancing", maxIterations)
 		}
 
 		seen[string(key)] = true
@@ -304,10 +304,10 @@ func TestDB_BUG1_IterationWithInterleavedFetch(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-2: makeRoom loop count off by one
+// makeRoom loop count off by one
 // ============================================================================
 
-func TestDB_BUG2_ManyCollisions(t *testing.T) {
+func TestDB_ManyCollisions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug2")
 
@@ -344,10 +344,10 @@ func TestDB_BUG2_ManyCollisions(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-3: bad() allows zero-length key
+// bad() allows zero-length key
 // ============================================================================
 
-func TestDB_BUG3_ZeroLengthKey(t *testing.T) {
+func TestDB_ZeroLengthKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug3")
 
@@ -379,10 +379,10 @@ func TestDB_BUG3_ZeroLengthKey(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-4: Store duplicate detection logic differs
+// Store duplicate detection logic differs
 // ============================================================================
 
-func TestDB_BUG4_DuplicateDetectionDefaultFlags(t *testing.T) {
+func TestDB_DuplicateDetectionDefaultFlags(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug4")
 
@@ -445,10 +445,10 @@ func TestDB_BUG4_DuplicateDetectionDefaultFlags(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-5: makeRoom failure leads to PutPair on overfull page
+// makeRoom failure leads to PutPair on overfull page
 // ============================================================================
 
-func TestDB_BUG5_NoPanicOnOverfull(t *testing.T) {
+func TestDB_NoPanicOnOverfull(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug5")
 
@@ -490,10 +490,10 @@ func TestDB_BUG5_NoPanicOnOverfull(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-7: getNext EOF partial read
+// getNext EOF partial read
 // ============================================================================
 
-func TestDB_BUG7_TruncatedPagFile(t *testing.T) {
+func TestDB_TruncatedPagFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug7")
 
@@ -558,10 +558,10 @@ func TestDB_BUG7_TruncatedPagFile(t *testing.T) {
 }
 
 // ============================================================================
-// BUG-8: O_RDONLY detection with extra flags
+// O_RDONLY detection with extra flags
 // ============================================================================
 
-func TestDB_BUG8_ReadOnlyWithExtraFlags(t *testing.T) {
+func TestDB_ReadOnlyWithExtraFlags(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bug8")
 
