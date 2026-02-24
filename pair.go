@@ -199,7 +199,7 @@ func (p *Page) SplPage(newPag *Page, sbit int64) {
 	copy(p.buf[:], make([]byte, PBLKSIZ))
 	copy(newPag.buf[:], make([]byte, PBLKSIZ))
 
-	n := cur.getIno(0)
+	n := int(cur.getIno(0))
 	for i := 1; n > 0; i += 2 {
 		keyOff := int(cur.getIno(i))
 		valOff := int(cur.getIno(i + 1))
@@ -227,7 +227,7 @@ func (p *Page) SplPage(newPag *Page, sbit int64) {
 // and the order of offsets are valid. Returns false if the page is invalid.
 func (p *Page) ChkPage() bool {
 	n := int(p.getN())
-	if n < 0 || n > PBLKSIZ/SHORTSIZE {
+	if n < 0 || n > PBLKSIZ/SHORTSIZE || n%2 != 0 {
 		return false
 	}
 	if n > 0 {

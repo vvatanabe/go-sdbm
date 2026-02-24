@@ -68,7 +68,7 @@ func (e *IOError) Unwrap() error {
 }
 
 func bad(x Datum) bool {
-	return x == nil
+	return x == nil || len(x) == 0
 }
 
 func exHash(item Datum) int64 {
@@ -184,7 +184,7 @@ func Prep(dirname, pagname string, flags int, mode os.FileMode) (*DBM, error) {
 	// flag for RDONLY if needed.
 	if flags&os.O_WRONLY != 0 {
 		flags = (flags &^ os.O_WRONLY) | os.O_RDWR
-	} else if flags == os.O_RDONLY {
+	} else if flags&(os.O_RDONLY|os.O_WRONLY|os.O_RDWR) == os.O_RDONLY {
 		db.rdonly = true
 	}
 
@@ -311,7 +311,7 @@ func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
 	// first. If it is not there, ignore.
 	if flags == StoreREPLACE {
 		_ = db.pag.DelPair(key)
-	} else if flags == StoreSEEDUPS && db.pag.DupPair(key) {
+	} else if db.pag.DupPair(key) {
 		// success
 		return true, nil
 	}
@@ -320,6 +320,9 @@ func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
 	if !db.pag.FitPair(need) {
 		if err := db.makeRoom(hash, need); err != nil {
 			return false, err
+		}
+		if !db.pag.FitPair(need) {
+			return false, fmt.Errorf("cannot insert after SPLTMAX attempts")
 		}
 	}
 
@@ -347,7 +350,7 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 	}
 	smax := SPLTMAX
 
-	for smax--; smax > 0; smax-- {
+	for {
 		// split the current page
 		db.pag.SplPage(newPag, db.hmask+1)
 
@@ -395,6 +398,11 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 		if err := seekWrite(db.pagf, offPag(db.pagbno), io.SeekStart, db.pag.buf[:]); err != nil {
 			return err
 		}
+
+		smax--
+		if smax == 0 {
+			break
+		}
 	}
 
 	// if we are here, this is real bad news. After SPLTMAX splits,
@@ -403,7 +411,7 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 		fmt.Println("sdbm: cannot insert after SPLTMAX attempts.")
 	}
 
-	return nil
+	return fmt.Errorf("cannot insert after SPLTMAX attempts")
 }
 
 // FirstKey retrieves the first key in the database.
@@ -532,17 +540,22 @@ func (db *DBM) getNext() (Datum, error) {
 		// try the next one... If we lost our position on the
 		// file, we will have to seek.
 		db.keyptr = 0
-		if db.pagbno != db.blkptr {
-			db.blkptr++
+		needSeek := db.pagbno != db.blkptr
+		db.blkptr++
+		if needSeek {
 			if _, err := db.pagf.Seek(offPag(db.blkptr), io.SeekStart); err != nil {
 				return Nullitem, wrapIOErr("seek", db.pagf.Name(), err)
 			}
 		}
 
 		db.pagbno = db.blkptr
-		if _, err := db.pagf.Read(db.pag.buf[:]); err != nil {
+		n, err := db.pagf.Read(db.pag.buf[:])
+		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return Nullitem, nil
+				if n == 0 {
+					return Nullitem, nil // complete EOF: normal end
+				}
+				return Nullitem, nil // partial read + EOF: incomplete page at end of file
 			}
 			return Nullitem, wrapIOErr("read", db.pagf.Name(), err)
 		}
