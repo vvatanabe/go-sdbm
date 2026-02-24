@@ -456,6 +456,86 @@ static int generate_db(const char *name, const char *keyfmt, const char *valfmt,
     return 0;
 }
 
+/*
+ * Binary key/value entries for the binary_keys golden database.
+ * Each entry contains bytes >= 0x80 which exercise the signed char
+ * hash path in the original C implementation.
+ */
+typedef struct {
+    const unsigned char *data;
+    int size;
+} bentry;
+
+static int generate_binary_keys_db(const char *name) {
+    DBM *db;
+    datum key, val;
+    char path[1024];
+    int i;
+
+    /* key/value pairs with high-byte data */
+    static const unsigned char k0[] = {0x80};
+    static const unsigned char v0[] = "val_0x80";
+    static const unsigned char k1[] = {0xFF};
+    static const unsigned char v1[] = "val_0xFF";
+    static const unsigned char k2[] = {0x7F, 0x80};
+    static const unsigned char v2[] = "val_boundary";
+    /* UTF-8 "東京" */
+    static const unsigned char k3[] = {0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC};
+    static const unsigned char v3[] = "Tokyo";
+    /* UTF-8 "é" */
+    static const unsigned char k4[] = {0xC3, 0xA9};
+    static const unsigned char v4[] = "e-acute";
+    /* mixed binary with null byte */
+    static const unsigned char k5[] = {0x00, 0x80, 0xFF, 0x01};
+    static const unsigned char v5[] = "val_mixed_binary";
+    /* ASCII key, binary value */
+    static const unsigned char k6[] = "normal_key";
+    static const unsigned char v6[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    /* both binary */
+    static const unsigned char k7[] = {0xCA, 0xFE, 0xBA, 0xBE};
+    static const unsigned char v7[] = {0x01, 0x02, 0x03};
+
+    struct { const unsigned char *kd; int ks; const unsigned char *vd; int vs; } entries[] = {
+        {k0, sizeof(k0), v0, sizeof(v0) - 1},
+        {k1, sizeof(k1), v1, sizeof(v1) - 1},
+        {k2, sizeof(k2), v2, sizeof(v2) - 1},
+        {k3, sizeof(k3), v3, sizeof(v3) - 1},
+        {k4, sizeof(k4), v4, sizeof(v4) - 1},
+        {k5, sizeof(k5), v5, sizeof(v5) - 1},
+        {k6, sizeof(k6) - 1, v6, sizeof(v6)},  /* exclude NUL from "normal_key" */
+        {k7, sizeof(k7), v7, sizeof(v7)},
+    };
+    int nentries = sizeof(entries) / sizeof(entries[0]);
+
+    snprintf(path, sizeof(path), "%s.dir", name);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s.pag", name);
+    unlink(path);
+
+    db = my_dbm_open(name, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (db == NULL) {
+        fprintf(stderr, "Failed to open %s\n", name);
+        return -1;
+    }
+
+    for (i = 0; i < nentries; i++) {
+        key.dptr  = (char *)entries[i].kd;
+        key.dsize = entries[i].ks;
+        val.dptr  = (char *)entries[i].vd;
+        val.dsize = entries[i].vs;
+
+        if (my_dbm_store(db, key, val, DBM_INSERT) != 0) {
+            fprintf(stderr, "Failed to store binary entry %d in %s\n", i, name);
+            my_dbm_close(db);
+            return -1;
+        }
+    }
+
+    my_dbm_close(db);
+    printf("Generated %s: %d entries\n", name, nentries);
+    return 0;
+}
+
 int main(void) {
     int ret = 0;
 
@@ -465,6 +545,9 @@ int main(void) {
         ret = 1;
 
     if (generate_db("many_splits", "key%05d", "val%05d", 10000) != 0)
+        ret = 1;
+
+    if (generate_binary_keys_db("binary_keys") != 0)
         ret = 1;
 
     if (ret == 0)

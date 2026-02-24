@@ -121,6 +121,67 @@ func TestDB_GoldenFile_ManySplits_Iteration(t *testing.T) {
 	}
 }
 
+func TestDB_GoldenFile_BinaryKeys_FetchAll(t *testing.T) {
+	dir := t.TempDir()
+	copyGoldenFiles(t, "binary_keys", dir)
+
+	db, err := sdbm.Open(filepath.Join(dir, "binary_keys"), os.O_RDONLY, 0644)
+	if err != nil {
+		t.Fatalf("Open golden file: %v", err)
+	}
+	defer db.Close()
+
+	// Same pairs as gen_golden.c generate_binary_keys_db()
+	pairs := []Pair{
+		{Key: sdbm.Datum([]byte{0x80}), Val: sdbm.Datum("val_0x80")},
+		{Key: sdbm.Datum([]byte{0xFF}), Val: sdbm.Datum("val_0xFF")},
+		{Key: sdbm.Datum([]byte{0x7F, 0x80}), Val: sdbm.Datum("val_boundary")},
+		{Key: sdbm.Datum([]byte{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}), Val: sdbm.Datum("Tokyo")},
+		{Key: sdbm.Datum([]byte{0xC3, 0xA9}), Val: sdbm.Datum("e-acute")},
+		{Key: sdbm.Datum([]byte{0x00, 0x80, 0xFF, 0x01}), Val: sdbm.Datum("val_mixed_binary")},
+		{Key: sdbm.Datum("normal_key"), Val: sdbm.Datum([]byte{0xDE, 0xAD, 0xBE, 0xEF})},
+		{Key: sdbm.Datum([]byte{0xCA, 0xFE, 0xBA, 0xBE}), Val: sdbm.Datum([]byte{0x01, 0x02, 0x03})},
+	}
+
+	for _, p := range pairs {
+		val, err := db.Fetch(p.Key)
+		if err != nil {
+			t.Fatalf("Fetch(%x): %v", []byte(p.Key), err)
+		}
+		if string(val) != string(p.Val) {
+			t.Errorf("Fetch(%x) = %x, want %x", []byte(p.Key), []byte(val), []byte(p.Val))
+		}
+	}
+}
+
+func TestDB_GoldenFile_BinaryKeys_Iteration(t *testing.T) {
+	dir := t.TempDir()
+	copyGoldenFiles(t, "binary_keys", dir)
+
+	db, err := sdbm.Open(filepath.Join(dir, "binary_keys"), os.O_RDONLY, 0644)
+	if err != nil {
+		t.Fatalf("Open golden file: %v", err)
+	}
+	defer db.Close()
+
+	count := 0
+	key, err := db.FirstKey()
+	if err != nil {
+		t.Fatalf("FirstKey: %v", err)
+	}
+	for key != nil {
+		count++
+		key, err = db.NextKey()
+		if err != nil {
+			t.Fatalf("NextKey: %v", err)
+		}
+	}
+
+	if count != 8 {
+		t.Errorf("Iteration count = %d, want 8", count)
+	}
+}
+
 // ============================================================================
 // BUG-1: getNext blkptr increment missing
 // ============================================================================
@@ -611,6 +672,50 @@ func TestDB_FileHash_ManySplits(t *testing.T) {
 
 		if goHash != cHash {
 			t.Errorf("many_splits%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
+		}
+	}
+}
+
+func TestDB_FileHash_BinaryKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "binary_keys")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Same pairs and insertion order as gen_golden.c generate_binary_keys_db()
+	pairs := []Pair{
+		{Key: sdbm.Datum([]byte{0x80}), Val: sdbm.Datum("val_0x80")},
+		{Key: sdbm.Datum([]byte{0xFF}), Val: sdbm.Datum("val_0xFF")},
+		{Key: sdbm.Datum([]byte{0x7F, 0x80}), Val: sdbm.Datum("val_boundary")},
+		{Key: sdbm.Datum([]byte{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}), Val: sdbm.Datum("Tokyo")},
+		{Key: sdbm.Datum([]byte{0xC3, 0xA9}), Val: sdbm.Datum("e-acute")},
+		{Key: sdbm.Datum([]byte{0x00, 0x80, 0xFF, 0x01}), Val: sdbm.Datum("val_mixed_binary")},
+		{Key: sdbm.Datum("normal_key"), Val: sdbm.Datum([]byte{0xDE, 0xAD, 0xBE, 0xEF})},
+		{Key: sdbm.Datum([]byte{0xCA, 0xFE, 0xBA, 0xBE}), Val: sdbm.Datum([]byte{0x01, 0x02, 0x03})},
+	}
+
+	for _, p := range pairs {
+		ok, err := db.Store(p.Key, p.Val, 0)
+		if err != nil {
+			t.Fatalf("Store(%x): %v", []byte(p.Key), err)
+		}
+		if !ok {
+			t.Fatalf("Store(%x) returned false", []byte(p.Key))
+		}
+	}
+	db.Close()
+
+	goldenDir := filepath.Join("testdata", "golden")
+
+	for _, ext := range []string{".dir", ".pag"} {
+		goHash := fileHash(t, path+ext)
+		cHash := fileHash(t, filepath.Join(goldenDir, "binary_keys"+ext))
+
+		if goHash != cHash {
+			t.Errorf("binary_keys%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
 		}
 	}
 }
