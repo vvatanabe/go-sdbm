@@ -4,7 +4,11 @@ package sdbm
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vvatanabe/go-sdbm/internal/csdbm"
@@ -598,6 +602,270 @@ func TestPageOps_EmptyValueCompatibility(t *testing.T) {
 			t.Errorf("GetPair(%q): Go=%q, C=%q", p[0], goVal, cVal)
 		}
 	}
+}
+
+// ============================================================================
+// Layer 5: Differential Random Operation Tests
+// ============================================================================
+
+// TestDB_DifferentialRandomOps exercises Store, Fetch, and Delete in random
+// order on both Go and C SDBM implementations, then compares the resulting
+// .dir and .pag file hashes to verify byte-level compatibility.
+func TestDB_DifferentialRandomOps(t *testing.T) {
+	seeds := []int64{42, 12345, 99999}
+	for _, seed := range seeds {
+		seed := seed
+		t.Run(fmt.Sprintf("seed_%d", seed), func(t *testing.T) {
+			testDifferentialRandomOps(t, seed, 200, 2000, false)
+		})
+	}
+}
+
+func TestDB_DifferentialRandomOps_WithBinaryKeys(t *testing.T) {
+	seeds := []int64{7, 314, 65536}
+	for _, seed := range seeds {
+		seed := seed
+		t.Run(fmt.Sprintf("seed_%d", seed), func(t *testing.T) {
+			testDifferentialRandomOps(t, seed, 200, 2000, true)
+		})
+	}
+}
+
+func TestDB_DifferentialRandomOps_WithReplace(t *testing.T) {
+	seeds := []int64{111, 222, 333}
+	for _, seed := range seeds {
+		seed := seed
+		t.Run(fmt.Sprintf("seed_%d", seed), func(t *testing.T) {
+			testDifferentialRandomOpsWithReplace(t, seed, 150, 1500)
+		})
+	}
+}
+
+func testDifferentialRandomOps(t *testing.T, seed int64, numKeys, numOps int, binaryKeys bool) {
+	t.Helper()
+
+	rng := rand.New(rand.NewSource(seed))
+
+	goDir := t.TempDir()
+	cDir := t.TempDir()
+	goPath := filepath.Join(goDir, "test")
+	cPath := filepath.Join(cDir, "test")
+
+	goDB, err := Open(goPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Go Open: %v", err)
+	}
+	cDB, err := csdbm.OpenCDB(cPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("C Open: %v", err)
+	}
+
+	// Pre-generate keys
+	keys := make([][]byte, numKeys)
+	for i := 0; i < numKeys; i++ {
+		if binaryKeys && i >= numKeys/2 {
+			// Binary keys containing bytes >= 0x80
+			klen := rng.Intn(10) + 1
+			k := make([]byte, klen)
+			for j := range k {
+				k[j] = byte(rng.Intn(256))
+			}
+			// Avoid all-zero keys which would be rejected by bad()
+			if allZero(k) {
+				k[0] = 0x80
+			}
+			keys[i] = k
+		} else {
+			keys[i] = []byte(fmt.Sprintf("key%04d", i))
+		}
+	}
+
+	// Run random operations
+	var storeCount, fetchCount, deleteCount int
+	var fetchMismatch int
+
+	for i := 0; i < numOps; i++ {
+		op := rng.Intn(10) // 0-4: store, 5-7: fetch, 8-9: delete
+		key := keys[rng.Intn(numKeys)]
+
+		switch {
+		case op < 5: // 50% store (INSERT mode)
+			valLen := rng.Intn(50) + 1
+			val := make([]byte, valLen)
+			for j := range val {
+				val[j] = byte(rng.Intn(256))
+			}
+			goOk, goErr := goDB.Store(Datum(key), Datum(val), 0)
+			cRet := cDB.Store(key, val, 0)
+
+			// Map C return to Go semantics: 0=success, 1=dup(ok), -1=error
+			if goErr != nil && cRet != -1 {
+				t.Fatalf("op %d: Store(%x) Go err=%v but C ret=%d", i, key, goErr, cRet)
+			}
+			if goErr == nil {
+				cOk := cRet == 0 || cRet == 1
+				if goOk != cOk {
+					t.Fatalf("op %d: Store(%x) Go ok=%v but C ret=%d", i, key, goOk, cRet)
+				}
+			}
+			storeCount++
+
+		case op < 8: // 30% fetch
+			goVal, goErr := goDB.Fetch(Datum(key))
+			cVal := cDB.Fetch(key)
+
+			if goErr != nil {
+				t.Fatalf("op %d: Fetch(%x) Go err=%v", i, key, goErr)
+			}
+			if !bytes.Equal(goVal, cVal) {
+				fetchMismatch++
+				if fetchMismatch <= 5 {
+					t.Errorf("op %d: Fetch(%x) Go=%x, C=%x", i, key, goVal, cVal)
+				}
+			}
+			fetchCount++
+
+		default: // 20% delete
+			goOk, goErr := goDB.Delete(Datum(key))
+			cRet := cDB.Delete(key)
+
+			if goErr != nil && cRet != -1 {
+				t.Fatalf("op %d: Delete(%x) Go err=%v but C ret=%d", i, key, goErr, cRet)
+			}
+			// C returns 0 on success, -1 on not-found/error
+			if goErr == nil {
+				cOk := cRet == 0
+				if goOk != cOk {
+					t.Fatalf("op %d: Delete(%x) Go ok=%v but C ret=%d", i, key, goOk, cRet)
+				}
+			}
+			deleteCount++
+		}
+	}
+
+	goDB.Close()
+	cDB.Close()
+
+	t.Logf("Operations: store=%d fetch=%d delete=%d (fetchMismatch=%d)",
+		storeCount, fetchCount, deleteCount, fetchMismatch)
+
+	// Compare file hashes
+	for _, ext := range []string{".dir", ".pag"} {
+		goHash := diffFileHash(t, goPath+ext)
+		cHash := diffFileHash(t, cPath+ext)
+		if goHash != cHash {
+			t.Errorf("test%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
+		}
+	}
+}
+
+func testDifferentialRandomOpsWithReplace(t *testing.T, seed int64, numKeys, numOps int) {
+	t.Helper()
+
+	rng := rand.New(rand.NewSource(seed))
+
+	goDir := t.TempDir()
+	cDir := t.TempDir()
+	goPath := filepath.Join(goDir, "test")
+	cPath := filepath.Join(cDir, "test")
+
+	goDB, err := Open(goPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Go Open: %v", err)
+	}
+	cDB, err := csdbm.OpenCDB(cPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("C Open: %v", err)
+	}
+
+	// Mix of ASCII and binary keys
+	keys := make([][]byte, numKeys)
+	for i := 0; i < numKeys; i++ {
+		if i < numKeys/2 {
+			keys[i] = []byte(fmt.Sprintf("rkey%04d", i))
+		} else {
+			klen := rng.Intn(8) + 1
+			k := make([]byte, klen)
+			for j := range k {
+				k[j] = byte(rng.Intn(256))
+			}
+			if allZero(k) {
+				k[0] = 0xFF
+			}
+			keys[i] = k
+		}
+	}
+
+	for i := 0; i < numOps; i++ {
+		op := rng.Intn(10)
+		key := keys[rng.Intn(numKeys)]
+
+		switch {
+		case op < 4: // 40% store INSERT
+			val := randomVal(rng)
+			goDB.Store(Datum(key), Datum(val), 0)
+			cDB.Store(key, val, 0)
+
+		case op < 7: // 30% store REPLACE
+			val := randomVal(rng)
+			goDB.Store(Datum(key), Datum(val), StoreREPLACE)
+			cDB.Store(key, val, 1) // CSDB_REPLACE = 1
+
+		case op < 9: // 20% fetch (verify)
+			goVal, _ := goDB.Fetch(Datum(key))
+			cVal := cDB.Fetch(key)
+			if !bytes.Equal(goVal, cVal) {
+				t.Errorf("op %d: Fetch(%x) Go=%x, C=%x", i, key, goVal, cVal)
+			}
+
+		default: // 10% delete
+			goDB.Delete(Datum(key))
+			cDB.Delete(key)
+		}
+	}
+
+	goDB.Close()
+	cDB.Close()
+
+	for _, ext := range []string{".dir", ".pag"} {
+		goHash := diffFileHash(t, goPath+ext)
+		cHash := diffFileHash(t, cPath+ext)
+		if goHash != cHash {
+			t.Errorf("test%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
+		}
+	}
+}
+
+func allZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func randomVal(rng *rand.Rand) []byte {
+	vlen := rng.Intn(50) + 1
+	v := make([]byte, vlen)
+	for j := range v {
+		v[j] = byte(rng.Intn(256))
+	}
+	return v
+}
+
+func diffFileHash(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// File may not exist if no writes occurred (e.g., empty .dir)
+		if os.IsNotExist(err) {
+			return "empty"
+		}
+		t.Fatalf("Failed to read %s: %v", path, err)
+	}
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h)
 }
 
 // ============================================================================
