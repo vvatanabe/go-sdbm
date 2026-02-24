@@ -499,3 +499,52 @@ func TestDBM_ManyPairs_Delete(t *testing.T) {
 		}
 	}
 }
+
+func TestDBM_DelPair_DataCorruption(t *testing.T) {
+	_, dbm := setup(t)
+	defer teardown(t, dbm)
+
+	// To reliably detect memory corruption caused by runaway copying (due to a missing slice upper bound),
+	// the data length is intentionally extended (padded) to ensure it encroaches on adjacent data areas.
+	keyA, valA := sdbm.Datum("keyA"), sdbm.Datum("valueA_padding_1234567890")
+	keyB, valB := sdbm.Datum("keyB"), sdbm.Datum("valueB_padding_1234567890")
+	keyC, valC := sdbm.Datum("keyC"), sdbm.Datum("valueC_padding_1234567890")
+
+	// Storing in the order of A, B, and C creates the following layout within the same page:
+	// [Start] ... (Free) ... [Data C] [Data B] [Data A] [End]
+	// * Since SDBM allocates data from the "back to front" of the buffer, A, being stored first, is placed at the very end.
+	if _, err := dbm.Store(keyA, valA, 0); err != nil {
+		t.Fatalf("Store A failed: %v", err)
+	}
+	if _, err := dbm.Store(keyB, valB, 0); err != nil {
+		t.Fatalf("Store B failed: %v", err)
+	}
+	if _, err := dbm.Store(keyC, valC, 0); err != nil {
+		t.Fatalf("Store C failed: %v", err)
+	}
+
+	// This is to prove that A reliably exists and is intact "before" the deletion process.
+	// This makes it possible to pinpoint the immediately following Delete operation as the exact cause of any data corruption.
+	gotA_before, _ := dbm.Fetch(keyA)
+	t.Logf("[Before Delete] Fetch A: %s", gotA_before)
+
+	// Deleting the "middle data (B)" forcibly triggers the data shift operation within DelPair
+	// (the process of moving C, located at the front, backwards into the gap left by B).
+	ok, err := dbm.Delete(keyB)
+	if err != nil || !ok {
+		t.Fatalf("Delete B failed: %v", err)
+	}
+
+	// If the upper bound of the slice is not specified in the `copy` function during C's data shift caused by B's deletion,
+	// excess data—including the remnants of B along with C—will be copied, overwriting (corrupting) A's area located behind it.
+	// Therefore, verifying the integrity of A, which is not the target of deletion, allows for the detection of bugs (regressions) in the shift operation.
+	gotA, err := dbm.Fetch(keyA)
+	if err != nil {
+		t.Fatalf("Fetch A failed: %v", err)
+	}
+	t.Logf("[After Delete] Fetch A: %s", gotA)
+
+	if !reflect.DeepEqual(gotA, valA) {
+		t.Errorf("Data corruption detected on A!\nExpected: %s\nGot: %s", valA, gotA)
+	}
+}

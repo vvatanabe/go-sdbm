@@ -67,6 +67,14 @@ func (e *IOError) Unwrap() error {
 	return e.Err
 }
 
+func bad(x Datum) bool {
+	return x == nil
+}
+
+func exHash(item Datum) int64 {
+	return Hash(item)
+}
+
 func wrapIOErr(op, path string, err error) error {
 	return &IOError{Op: op, Path: path, Err: err}
 }
@@ -235,11 +243,11 @@ func (db *DBM) Close() error {
 // Fetch retrieves the value associated with the given key from the database.
 // It returns the value and an error if the key is invalid or if there is a problem accessing the page.
 func (db *DBM) Fetch(key Datum) (Datum, error) {
-	if key == nil {
+	if bad(key) {
 		return Nullitem, ErrInvalidArgument
 	}
 
-	hash := Hash(key)
+	hash := exHash(key)
 	if err := db.getPage(hash); err != nil {
 		return Nullitem, err
 	}
@@ -251,14 +259,14 @@ func (db *DBM) Fetch(key Datum) (Datum, error) {
 // It returns a boolean indicating success or failure, and an error if the key is invalid,
 // the database is read-only, or there is a problem accessing the page.
 func (db *DBM) Delete(key Datum) (bool, error) {
-	if key == nil {
+	if bad(key) {
 		return false, ErrInvalidArgument
 	}
 	if db.rdonly {
 		return false, ErrDBMRDOnly
 	}
 
-	hash := Hash(key)
+	hash := exHash(key)
 	if err := db.getPage(hash); err != nil {
 		return false, err
 	}
@@ -279,7 +287,7 @@ func (db *DBM) Delete(key Datum) (bool, error) {
 // If StoreSEEDUPS is specified, duplicates are not allowed.
 // It returns a boolean indicating success and an error if the operation fails or if the database is read-only.
 func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
-	if key == nil {
+	if bad(key) {
 		return false, ErrInvalidArgument
 	}
 
@@ -294,7 +302,7 @@ func (db *DBM) Store(key, val Datum, flags StoreFlags) (bool, error) {
 		return false, ErrInvalidArgument
 	}
 
-	hash := Hash(key)
+	hash := exHash(key)
 	if err := db.getPage(hash); err != nil {
 		return false, err
 	}
@@ -401,7 +409,7 @@ func (db *DBM) makeRoom(hash int64, need int) error {
 // FirstKey retrieves the first key in the database.
 // This function initializes the reading of the first page (page 0) and sets the current pointers (pagbno, blkptr, keyptr) to 0.
 // If an error occurs while reading the page, it returns an error.
-// Note: These routines may fail if deletions are not accounted for, due to a ndbm bug.
+// Note: These routines may fail if deletions are not accounted for, due to an ndbm bug.
 func (db *DBM) FirstKey() (Datum, error) {
 	// start at page 0
 	if err := seekRead(db.pagf, offPag(0), io.SeekStart, db.pag.buf[:]); err != nil {
@@ -416,7 +424,7 @@ func (db *DBM) FirstKey() (Datum, error) {
 
 // NextKey retrieves the next key in the database after FirstKey or after the last key retrieved by a previous call to NextKey.
 // If the current page has more keys, it returns the next one; otherwise, it moves to the next page to continue searching for keys.
-// Note: These routines may fail if deletions are not accounted for, due to a ndbm bug.
+// Note: These routines may fail if deletions are not accounted for, due to an ndbm bug.
 func (db *DBM) NextKey() (Datum, error) {
 	return db.getNext()
 }
@@ -460,10 +468,6 @@ func (db *DBM) getPage(hash int64) error {
 	}
 
 	return nil
-}
-
-type Dir struct {
-	buf [DBLKSIZ]byte // directory file block buffer
 }
 
 func (db *DBM) getDBit(dbit int64) bool {

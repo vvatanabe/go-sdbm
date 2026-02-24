@@ -159,7 +159,7 @@ func (p *Page) DelPair(key Datum) bool {
 
 		// shift data/keys down
 		m := int(p.getIno(i+1) - p.getIno(n))
-		copy(p.buf[dst-m:], p.buf[src-m:])
+		copy(p.buf[dst-m:dst], p.buf[src-m:src])
 
 		// Adjust offset index up
 		for i < n-1 {
@@ -208,7 +208,7 @@ func (p *Page) SplPage(newPag *Page, sbit int64) {
 		val = cur.buf[valOff:keyOff]
 
 		// select the page pointer (by looking at sbit) and insert
-		if Hash(key)&sbit != 0 {
+		if exHash(key)&sbit != 0 {
 			newPag.PutPair(key, val)
 		} else {
 			p.PutPair(key, val)
