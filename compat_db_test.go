@@ -1,6 +1,7 @@
 package sdbm_test
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -543,8 +544,90 @@ func TestDB_BUG8_ReadOnlyWithExtraFlags(t *testing.T) {
 }
 
 // ============================================================================
+// Layer 4: File Hash Comparison Tests (Write-Path End-to-End Verification)
+// ============================================================================
+
+func TestDB_FileHash_AsciiSmall(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ascii_small")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	for i := 1; i <= 100; i++ {
+		key := sdbm.Datum(fmt.Sprintf("key%03d", i))
+		val := sdbm.Datum(fmt.Sprintf("val%03d", i))
+		ok, err := db.Store(key, val, 0)
+		if err != nil {
+			t.Fatalf("Store(%s): %v", key, err)
+		}
+		if !ok {
+			t.Fatalf("Store(%s) returned false", key)
+		}
+	}
+	db.Close()
+
+	goldenDir := filepath.Join("testdata", "golden")
+
+	for _, ext := range []string{".dir", ".pag"} {
+		goHash := fileHash(t, path+ext)
+		cHash := fileHash(t, filepath.Join(goldenDir, "ascii_small"+ext))
+
+		if goHash != cHash {
+			t.Errorf("ascii_small%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
+		}
+	}
+}
+
+func TestDB_FileHash_ManySplits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "many_splits")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	for i := 1; i <= 10000; i++ {
+		key := sdbm.Datum(fmt.Sprintf("key%05d", i))
+		val := sdbm.Datum(fmt.Sprintf("val%05d", i))
+		ok, err := db.Store(key, val, 0)
+		if err != nil {
+			t.Fatalf("Store(%s): %v", key, err)
+		}
+		if !ok {
+			t.Fatalf("Store(%s) returned false", key)
+		}
+	}
+	db.Close()
+
+	goldenDir := filepath.Join("testdata", "golden")
+
+	for _, ext := range []string{".dir", ".pag"} {
+		goHash := fileHash(t, path+ext)
+		cHash := fileHash(t, filepath.Join(goldenDir, "many_splits"+ext))
+
+		if goHash != cHash {
+			t.Errorf("many_splits%s: Go SHA256=%s, C SHA256=%s — files differ", ext, goHash, cHash)
+		}
+	}
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
+
+func fileHash(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read %s: %v", path, err)
+	}
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h)
+}
 
 func copyGoldenFiles(t *testing.T, name, destDir string) {
 	t.Helper()

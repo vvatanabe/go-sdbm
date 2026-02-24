@@ -66,7 +66,8 @@ func TestHash_LargeInputCompatibility(t *testing.T) {
 }
 
 func TestHash_BinaryDataDocumentation(t *testing.T) {
-	// Test with bytes >= 0x80 to document signed/unsigned char differences
+	// Test with bytes >= 0x80 to document signed/unsigned char differences.
+	// Go's Hash now uses signed char semantics to match C's default behavior.
 	inputs := [][]byte{
 		{0x80},
 		{0xFF},
@@ -79,13 +80,45 @@ func TestHash_BinaryDataDocumentation(t *testing.T) {
 		cHashUnsigned := csdbm.HashUnsigned(input)
 		cHashSigned := csdbm.Hash(input)
 
-		if goHash != cHashUnsigned {
-			t.Errorf("Hash(%x): Go=%d, C-unsigned=%d — MISMATCH", input, goHash, cHashUnsigned)
+		if goHash != cHashSigned {
+			t.Errorf("Hash(%x): Go=%d, C-signed=%d — MISMATCH", input, goHash, cHashSigned)
 		}
 
 		if cHashSigned != cHashUnsigned {
 			t.Logf("Hash(%x): C-signed=%d, C-unsigned=%d, Go=%d — signed/unsigned difference documented",
 				input, cHashSigned, cHashUnsigned, goHash)
+		}
+	}
+}
+
+// ============================================================================
+// Layer 1.5: Signed Char Compatibility Tests (TDD Red-Green target)
+// ============================================================================
+
+func TestHash_SignedCharCompatibility(t *testing.T) {
+	// This test verifies that Go's Hash function produces the same results
+	// as C's dbm_hash with the default signed char behavior.
+	// On x86-64, C's char is signed by default, so bytes >= 0x80 are
+	// interpreted as negative values (-128 to -1).
+	//
+	// TDD Red: With the current unsigned implementation, this test FAILS.
+	// TDD Green: After fixing Hash to use signed char semantics, this test PASSES.
+	inputs := [][]byte{
+		{0x80},
+		{0xFF},
+		{0x00, 0x80, 0xFF},
+		{0x7F, 0x80},                         // boundary between signed positive and negative
+		{0xE6, 0x9D, 0xB1},                   // UTF-8 "東"
+		{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}, // UTF-8 "東京"
+		{0xC3, 0xA9},                          // UTF-8 "é"
+	}
+
+	for _, input := range inputs {
+		goHash := Hash(input)
+		cHashSigned := csdbm.Hash(input)
+
+		if goHash != cHashSigned {
+			t.Errorf("Hash(%x): Go=%d, C-signed=%d — MISMATCH", input, goHash, cHashSigned)
 		}
 	}
 }

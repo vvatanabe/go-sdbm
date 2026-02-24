@@ -8,7 +8,7 @@ package sdbm
 func Hash(data []byte) int64 {
 	var hash uint64
 	for i := 0; i < len(data); i++ {
-		hash = uint64(data[i]) + 65599*hash
+		hash = uint64(int64(int8(data[i]))) + 65599*hash
 	}
 	return int64(hash)
 }
