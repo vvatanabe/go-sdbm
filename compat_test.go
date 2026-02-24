@@ -114,7 +114,7 @@ func TestHash_SignedCharCompatibility(t *testing.T) {
 		{0x7F, 0x80},                         // boundary between signed positive and negative
 		{0xE6, 0x9D, 0xB1},                   // UTF-8 "東"
 		{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}, // UTF-8 "東京"
-		{0xC3, 0xA9},                          // UTF-8 "é"
+		{0xC3, 0xA9},                         // UTF-8 "é"
 	}
 
 	for _, input := range inputs {

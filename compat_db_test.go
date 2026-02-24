@@ -740,10 +740,10 @@ func TestDB_BinaryKey_StoreAndFetch(t *testing.T) {
 		{Key: sdbm.Datum([]byte{0xFF}), Val: sdbm.Datum("val_0xFF")},
 		{Key: sdbm.Datum([]byte{0x7F, 0x80}), Val: sdbm.Datum("val_boundary")},
 		{Key: sdbm.Datum([]byte{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}), Val: sdbm.Datum("Tokyo")},      // UTF-8 "東京"
-		{Key: sdbm.Datum([]byte{0xC3, 0xA9}), Val: sdbm.Datum("e-acute")},                               // UTF-8 "é"
-		{Key: sdbm.Datum([]byte{0x00, 0x80, 0xFF, 0x01}), Val: sdbm.Datum("val_mixed_binary")},          // mixed with null byte
-		{Key: sdbm.Datum("normal_key"), Val: sdbm.Datum([]byte{0xDE, 0xAD, 0xBE, 0xEF})},                // binary value
-		{Key: sdbm.Datum([]byte{0xCA, 0xFE, 0xBA, 0xBE}), Val: sdbm.Datum([]byte{0x01, 0x02, 0x03})},   // both binary
+		{Key: sdbm.Datum([]byte{0xC3, 0xA9}), Val: sdbm.Datum("e-acute")},                            // UTF-8 "é"
+		{Key: sdbm.Datum([]byte{0x00, 0x80, 0xFF, 0x01}), Val: sdbm.Datum("val_mixed_binary")},       // mixed with null byte
+		{Key: sdbm.Datum("normal_key"), Val: sdbm.Datum([]byte{0xDE, 0xAD, 0xBE, 0xEF})},             // binary value
+		{Key: sdbm.Datum([]byte{0xCA, 0xFE, 0xBA, 0xBE}), Val: sdbm.Datum([]byte{0x01, 0x02, 0x03})}, // both binary
 	}
 
 	// Store all pairs
