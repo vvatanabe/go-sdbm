@@ -366,6 +366,241 @@ func TestPageOps_BUG6_ChkPageOddEntries(t *testing.T) {
 }
 
 // ============================================================================
+// Layer 2 (additional): GetNKey Compatibility Tests
+// ============================================================================
+
+func TestPageOps_GetNKeyCompatibility(t *testing.T) {
+	keys := [][]byte{
+		[]byte("alpha"), []byte("bravo"), []byte("charlie"),
+	}
+	vals := [][]byte{
+		[]byte("val_a"), []byte("val_b"), []byte("val_c"),
+	}
+
+	goPage := &Page{}
+	cBuf := make([]byte, PBLKSIZ)
+
+	for i := range keys {
+		goPage.PutPair(Datum(keys[i]), Datum(vals[i]))
+		csdbm.PutPair(cBuf, keys[i], vals[i])
+	}
+
+	// Test all valid 1-based indices
+	for num := 1; num <= len(keys); num++ {
+		goKey := goPage.GetNKey(num)
+		cKey := csdbm.GetNKey(cBuf, num)
+
+		if !bytes.Equal(goKey, cKey) {
+			t.Errorf("GetNKey(%d): Go=%q, C=%q", num, goKey, cKey)
+		}
+	}
+
+	// Test out-of-range index
+	goKey := goPage.GetNKey(len(keys) + 1)
+	cKey := csdbm.GetNKey(cBuf, len(keys)+1)
+	if (goKey == nil) != (cKey == nil) {
+		t.Errorf("GetNKey(out-of-range): Go=%v, C=%v", goKey, cKey)
+	}
+
+	// Test on empty page
+	emptyGo := &Page{}
+	emptyCBuf := make([]byte, PBLKSIZ)
+	goKey = emptyGo.GetNKey(1)
+	cKey = csdbm.GetNKey(emptyCBuf, 1)
+	if (goKey == nil) != (cKey == nil) {
+		t.Errorf("GetNKey(empty, 1): Go=%v, C=%v", goKey, cKey)
+	}
+}
+
+// ============================================================================
+// Layer 2 (additional): DupPair Compatibility Tests
+// ============================================================================
+
+func TestPageOps_DupPairCompatibility(t *testing.T) {
+	keys := [][]byte{
+		[]byte("key1"), []byte("key2"), []byte("key3"),
+	}
+	vals := [][]byte{
+		[]byte("val1"), []byte("val2"), []byte("val3"),
+	}
+
+	goPage := &Page{}
+	cBuf := make([]byte, PBLKSIZ)
+
+	for i := range keys {
+		goPage.PutPair(Datum(keys[i]), Datum(vals[i]))
+		csdbm.PutPair(cBuf, keys[i], vals[i])
+	}
+
+	// Test existing keys
+	for _, key := range keys {
+		goDup := goPage.DupPair(Datum(key))
+		cDup := csdbm.DupPair(cBuf, key)
+		if goDup != cDup {
+			t.Errorf("DupPair(%q): Go=%v, C=%v", key, goDup, cDup)
+		}
+	}
+
+	// Test non-existent key
+	goDup := goPage.DupPair(Datum("nonexistent"))
+	cDup := csdbm.DupPair(cBuf, []byte("nonexistent"))
+	if goDup != cDup {
+		t.Errorf("DupPair(nonexistent): Go=%v, C=%v", goDup, cDup)
+	}
+
+	// Test on empty page
+	emptyGo := &Page{}
+	emptyCBuf := make([]byte, PBLKSIZ)
+	goDup = emptyGo.DupPair(Datum("key1"))
+	cDup = csdbm.DupPair(emptyCBuf, []byte("key1"))
+	if goDup != cDup {
+		t.Errorf("DupPair(empty, key1): Go=%v, C=%v", goDup, cDup)
+	}
+}
+
+// ============================================================================
+// Layer 2 (additional): DelPair First/Last Entry Compatibility Tests
+// ============================================================================
+
+func TestPageOps_DelPairFirstEntryCompatibility(t *testing.T) {
+	keys := [][]byte{
+		[]byte("keyA"), []byte("keyB"), []byte("keyC"),
+	}
+	vals := [][]byte{
+		[]byte("valueA_padding_1234567890"),
+		[]byte("valueB_padding_1234567890"),
+		[]byte("valueC_padding_1234567890"),
+	}
+
+	goPage := &Page{}
+	cBuf := make([]byte, PBLKSIZ)
+
+	for i := range keys {
+		goPage.PutPair(Datum(keys[i]), Datum(vals[i]))
+		csdbm.PutPair(cBuf, keys[i], vals[i])
+	}
+
+	// Delete first entry (i==1 in the internal index, triggers PBLKSIZ path in dst calculation)
+	goOk := goPage.DelPair(Datum(keys[0]))
+	cOk := csdbm.DelPair(cBuf, keys[0])
+
+	if goOk != cOk {
+		t.Errorf("DelPair(%q): Go=%v, C=%v", keys[0], goOk, cOk)
+	}
+
+	if !bytes.Equal(goPage.buf[:], cBuf) {
+		t.Error("DelPair first entry: Go and C page buffers differ")
+		diffPageBuffers(t, goPage.buf[:], cBuf)
+	}
+
+	// Verify remaining entries are intact
+	for _, i := range []int{1, 2} {
+		goVal := goPage.GetPair(Datum(keys[i]))
+		cVal := csdbm.GetPair(cBuf, keys[i])
+		if !bytes.Equal(goVal, cVal) {
+			t.Errorf("After delete first, GetPair(%q): Go=%q, C=%q", keys[i], goVal, cVal)
+		}
+	}
+}
+
+func TestPageOps_DelPairLastEntryCompatibility(t *testing.T) {
+	keys := [][]byte{
+		[]byte("keyA"), []byte("keyB"), []byte("keyC"),
+	}
+	vals := [][]byte{
+		[]byte("valueA_padding_1234567890"),
+		[]byte("valueB_padding_1234567890"),
+		[]byte("valueC_padding_1234567890"),
+	}
+
+	goPage := &Page{}
+	cBuf := make([]byte, PBLKSIZ)
+
+	for i := range keys {
+		goPage.PutPair(Datum(keys[i]), Datum(vals[i]))
+		csdbm.PutPair(cBuf, keys[i], vals[i])
+	}
+
+	// Delete last entry (i==n-1 case, only adjusts entry count without data shift)
+	lastKey := keys[len(keys)-1]
+	goOk := goPage.DelPair(Datum(lastKey))
+	cOk := csdbm.DelPair(cBuf, lastKey)
+
+	if goOk != cOk {
+		t.Errorf("DelPair(%q): Go=%v, C=%v", lastKey, goOk, cOk)
+	}
+
+	if !bytes.Equal(goPage.buf[:], cBuf) {
+		t.Error("DelPair last entry: Go and C page buffers differ")
+		diffPageBuffers(t, goPage.buf[:], cBuf)
+	}
+
+	// Verify remaining entries are intact
+	for _, i := range []int{0, 1} {
+		goVal := goPage.GetPair(Datum(keys[i]))
+		cVal := csdbm.GetPair(cBuf, keys[i])
+		if !bytes.Equal(goVal, cVal) {
+			t.Errorf("After delete last, GetPair(%q): Go=%q, C=%q", keys[i], goVal, cVal)
+		}
+	}
+}
+
+// ============================================================================
+// Layer 2 (additional): Empty Value Compatibility Tests
+// ============================================================================
+
+func TestPageOps_EmptyValueCompatibility(t *testing.T) {
+	goPage := &Page{}
+	cBuf := make([]byte, PBLKSIZ)
+
+	key := []byte("mykey")
+	val := []byte{} // empty value
+
+	goPage.PutPair(Datum(key), Datum(val))
+	csdbm.PutPair(cBuf, key, val)
+
+	if !bytes.Equal(goPage.buf[:], cBuf) {
+		t.Error("PutPair with empty value: Go and C page buffers differ")
+		diffPageBuffers(t, goPage.buf[:], cBuf)
+	}
+
+	goVal := goPage.GetPair(Datum(key))
+	cVal := csdbm.GetPair(cBuf, key)
+
+	if len(goVal) != 0 || len(cVal) != 0 {
+		t.Errorf("GetPair(empty value): Go=%q (len=%d), C=%q (len=%d)", goVal, len(goVal), cVal, len(cVal))
+	}
+
+	// Mix empty and non-empty values
+	goPage2 := &Page{}
+	cBuf2 := make([]byte, PBLKSIZ)
+
+	pairs := [][2][]byte{
+		{[]byte("k1"), []byte("v1")},
+		{[]byte("k2"), {}},
+		{[]byte("k3"), []byte("v3")},
+	}
+
+	for _, p := range pairs {
+		goPage2.PutPair(Datum(p[0]), Datum(p[1]))
+		csdbm.PutPair(cBuf2, p[0], p[1])
+	}
+
+	if !bytes.Equal(goPage2.buf[:], cBuf2) {
+		t.Error("PutPair with mixed empty/non-empty values: buffers differ")
+		diffPageBuffers(t, goPage2.buf[:], cBuf2)
+	}
+
+	for _, p := range pairs {
+		goVal := goPage2.GetPair(Datum(p[0]))
+		cVal := csdbm.GetPair(cBuf2, p[0])
+		if !bytes.Equal(goVal, cVal) {
+			t.Errorf("GetPair(%q): Go=%q, C=%q", p[0], goVal, cVal)
+		}
+	}
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 

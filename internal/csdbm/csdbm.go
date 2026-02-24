@@ -157,6 +157,28 @@ void splpage(char *pag, char *newbuf, long sbit) {
 	}
 }
 
+datum getnkey(char *pag, int num) {
+	datum key;
+	int off;
+	short *ino = (short *) pag;
+
+	num = num * 2 - 1;
+	if (ino[0] == 0 || num > ino[0])
+		return nullitem;
+
+	off = (num > 1) ? ino[num - 1] : PBLKSIZ;
+
+	key.dptr = pag + ino[num];
+	key.dsize = off - ino[num];
+
+	return key;
+}
+
+int duppair(char *pag, datum key) {
+	short *ino = (short *) pag;
+	return ino[0] > 0 && seepair(pag, ino[0], key.dptr, key.dsize) > 0;
+}
+
 int chkpage(char *pag) {
 	int n;
 	int off;
@@ -259,6 +281,27 @@ func SplPage(pag, newPag []byte, sbit int64) {
 // FitPair calls C fitpair on the given page buffer.
 func FitPair(pag []byte, need int) bool {
 	return C.fitpair((*C.char)(unsafe.Pointer(&pag[0])), C.int(need)) != 0
+}
+
+// GetNKey calls C getnkey on the given page buffer.
+// num is 1-based key index.
+func GetNKey(pag []byte, num int) []byte {
+	result := C.getnkey((*C.char)(unsafe.Pointer(&pag[0])), C.int(num))
+	if result.dptr == nil {
+		return nil
+	}
+	return C.GoBytes(unsafe.Pointer(result.dptr), result.dsize)
+}
+
+// DupPair calls C duppair on the given page buffer.
+func DupPair(pag []byte, key []byte) bool {
+	ckey := C.datum{}
+	if len(key) > 0 {
+		ckey.dptr = (*C.char)(unsafe.Pointer(&key[0]))
+	}
+	ckey.dsize = C.int(len(key))
+
+	return C.duppair((*C.char)(unsafe.Pointer(&pag[0])), ckey) != 0
 }
 
 // ChkPage calls C chkpage on the given page buffer.

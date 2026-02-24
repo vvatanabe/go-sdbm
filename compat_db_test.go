@@ -616,6 +616,358 @@ func TestDB_FileHash_ManySplits(t *testing.T) {
 }
 
 // ============================================================================
+// Binary Key End-to-End Tests
+// ============================================================================
+
+func TestDB_BinaryKey_StoreAndFetch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "binkey")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	// Keys containing bytes >= 0x80, which exercise the signed char hash path
+	pairs := []Pair{
+		{Key: sdbm.Datum([]byte{0x80}), Val: sdbm.Datum("val_0x80")},
+		{Key: sdbm.Datum([]byte{0xFF}), Val: sdbm.Datum("val_0xFF")},
+		{Key: sdbm.Datum([]byte{0x7F, 0x80}), Val: sdbm.Datum("val_boundary")},
+		{Key: sdbm.Datum([]byte{0xE6, 0x9D, 0xB1, 0xE4, 0xBA, 0xAC}), Val: sdbm.Datum("Tokyo")},      // UTF-8 "東京"
+		{Key: sdbm.Datum([]byte{0xC3, 0xA9}), Val: sdbm.Datum("e-acute")},                               // UTF-8 "é"
+		{Key: sdbm.Datum([]byte{0x00, 0x80, 0xFF, 0x01}), Val: sdbm.Datum("val_mixed_binary")},          // mixed with null byte
+		{Key: sdbm.Datum("normal_key"), Val: sdbm.Datum([]byte{0xDE, 0xAD, 0xBE, 0xEF})},                // binary value
+		{Key: sdbm.Datum([]byte{0xCA, 0xFE, 0xBA, 0xBE}), Val: sdbm.Datum([]byte{0x01, 0x02, 0x03})},   // both binary
+	}
+
+	// Store all pairs
+	for _, p := range pairs {
+		ok, err := db.Store(p.Key, p.Val, 0)
+		if err != nil {
+			t.Fatalf("Store(%x): %v", []byte(p.Key), err)
+		}
+		if !ok {
+			t.Fatalf("Store(%x) returned false", []byte(p.Key))
+		}
+	}
+
+	// Fetch and verify all pairs
+	for _, p := range pairs {
+		val, err := db.Fetch(p.Key)
+		if err != nil {
+			t.Fatalf("Fetch(%x): %v", []byte(p.Key), err)
+		}
+		if string(val) != string(p.Val) {
+			t.Errorf("Fetch(%x) = %x, want %x", []byte(p.Key), []byte(val), []byte(p.Val))
+		}
+	}
+
+	// Delete and verify
+	for _, p := range pairs {
+		ok, err := db.Delete(p.Key)
+		if err != nil {
+			t.Fatalf("Delete(%x): %v", []byte(p.Key), err)
+		}
+		if !ok {
+			t.Errorf("Delete(%x) returned false", []byte(p.Key))
+		}
+
+		val, err := db.Fetch(p.Key)
+		if err != nil {
+			t.Fatalf("Fetch after Delete(%x): %v", []byte(p.Key), err)
+		}
+		if val != nil {
+			t.Errorf("Fetch after Delete(%x) = %x, want nil", []byte(p.Key), []byte(val))
+		}
+	}
+}
+
+// ============================================================================
+// Empty Value Tests
+// ============================================================================
+
+func TestDB_EmptyValue_StoreAndFetch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "emptyval")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	key := sdbm.Datum("key_with_empty_val")
+	emptyVal := sdbm.Datum([]byte{})
+
+	ok, err := db.Store(key, emptyVal, 0)
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	if !ok {
+		t.Fatal("Store returned false")
+	}
+
+	// Fetch should return a zero-length datum (not nil)
+	got, err := db.Fetch(key)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Fetch(empty value) = %q (len=%d), want empty", got, len(got))
+	}
+
+	// Store a normal value alongside
+	key2 := sdbm.Datum("key_with_normal_val")
+	val2 := sdbm.Datum("normal_value")
+	if _, err := db.Store(key2, val2, 0); err != nil {
+		t.Fatalf("Store key2: %v", err)
+	}
+
+	// Both should coexist correctly
+	got, err = db.Fetch(key)
+	if err != nil {
+		t.Fatalf("Fetch key1 after key2: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Fetch key1 = %q, want empty", got)
+	}
+
+	got2, err := db.Fetch(key2)
+	if err != nil {
+		t.Fatalf("Fetch key2: %v", err)
+	}
+	if string(got2) != string(val2) {
+		t.Errorf("Fetch key2 = %q, want %q", got2, val2)
+	}
+
+	// Delete empty-value entry
+	ok, err = db.Delete(key)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !ok {
+		t.Error("Delete returned false")
+	}
+
+	got, err = db.Fetch(key)
+	if err != nil {
+		t.Fatalf("Fetch after Delete: %v", err)
+	}
+	if got != nil {
+		t.Errorf("Fetch after Delete = %q, want nil", got)
+	}
+}
+
+// ============================================================================
+// Delete + Re-Store Cycle Tests
+// ============================================================================
+
+func TestDB_DeleteAndReStore(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "delrestore")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	key := sdbm.Datum("reuse_key")
+	val1 := sdbm.Datum("first_value")
+	val2 := sdbm.Datum("second_value_longer")
+	val3 := sdbm.Datum("v3")
+
+	// Store initial value
+	if _, err := db.Store(key, val1, 0); err != nil {
+		t.Fatalf("Store val1: %v", err)
+	}
+
+	// Delete
+	ok, err := db.Delete(key)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !ok {
+		t.Fatal("Delete returned false")
+	}
+
+	// Re-store with different (longer) value
+	if _, err := db.Store(key, val2, 0); err != nil {
+		t.Fatalf("Store val2: %v", err)
+	}
+
+	got, err := db.Fetch(key)
+	if err != nil {
+		t.Fatalf("Fetch val2: %v", err)
+	}
+	if string(got) != string(val2) {
+		t.Errorf("Fetch after re-store = %q, want %q", got, val2)
+	}
+
+	// Delete and re-store with shorter value
+	if _, err := db.Delete(key); err != nil {
+		t.Fatalf("Delete 2: %v", err)
+	}
+	if _, err := db.Store(key, val3, 0); err != nil {
+		t.Fatalf("Store val3: %v", err)
+	}
+
+	got, err = db.Fetch(key)
+	if err != nil {
+		t.Fatalf("Fetch val3: %v", err)
+	}
+	if string(got) != string(val3) {
+		t.Errorf("Fetch after re-store 2 = %q, want %q", got, val3)
+	}
+}
+
+func TestDB_DeleteAndReStore_MultipleKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "delrestore_multi")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	// Insert 100 entries
+	const numEntries = 100
+	for i := 1; i <= numEntries; i++ {
+		key := sdbm.Datum(fmt.Sprintf("key%03d", i))
+		val := sdbm.Datum(fmt.Sprintf("val%03d", i))
+		if _, err := db.Store(key, val, 0); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Delete even-numbered entries
+	for i := 2; i <= numEntries; i += 2 {
+		key := sdbm.Datum(fmt.Sprintf("key%03d", i))
+		ok, err := db.Delete(key)
+		if err != nil {
+			t.Fatalf("Delete(%s): %v", key, err)
+		}
+		if !ok {
+			t.Fatalf("Delete(%s) returned false", key)
+		}
+	}
+
+	// Re-store even-numbered entries with new values
+	for i := 2; i <= numEntries; i += 2 {
+		key := sdbm.Datum(fmt.Sprintf("key%03d", i))
+		val := sdbm.Datum(fmt.Sprintf("new%03d", i))
+		if _, err := db.Store(key, val, 0); err != nil {
+			t.Fatalf("Re-store(%s): %v", key, err)
+		}
+	}
+
+	// Verify all entries
+	for i := 1; i <= numEntries; i++ {
+		key := sdbm.Datum(fmt.Sprintf("key%03d", i))
+		got, err := db.Fetch(key)
+		if err != nil {
+			t.Fatalf("Fetch(%s): %v", key, err)
+		}
+
+		var expected string
+		if i%2 == 0 {
+			expected = fmt.Sprintf("new%03d", i)
+		} else {
+			expected = fmt.Sprintf("val%03d", i)
+		}
+
+		if string(got) != expected {
+			t.Errorf("Fetch(%s) = %q, want %q", key, got, expected)
+		}
+	}
+}
+
+// ============================================================================
+// Iteration Order Tests
+// ============================================================================
+
+func TestDB_IterationCompleteness_AfterSplits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "iter_order")
+
+	db, err := sdbm.Open(path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	// Insert entries that will trigger many page splits
+	const numEntries = 5000
+	expected := make(map[string]string)
+	for i := 1; i <= numEntries; i++ {
+		key := fmt.Sprintf("key%05d", i)
+		val := fmt.Sprintf("val%05d", i)
+		if _, err := db.Store(sdbm.Datum(key), sdbm.Datum(val), 0); err != nil {
+			t.Fatalf("Store(%s): %v", key, err)
+		}
+		expected[key] = val
+	}
+
+	// Iterate and collect all keys
+	seen := make(map[string]bool)
+	key, err := db.FirstKey()
+	if err != nil {
+		t.Fatalf("FirstKey: %v", err)
+	}
+
+	for key != nil {
+		k := string(key)
+		if seen[k] {
+			t.Errorf("Duplicate key in iteration: %s", k)
+		}
+		seen[k] = true
+
+		// Verify value is correct for each iterated key
+		val, err := db.Fetch(key)
+		if err != nil {
+			t.Fatalf("Fetch(%s) during iteration: %v", k, err)
+		}
+		if string(val) != expected[k] {
+			t.Errorf("Fetch(%s) = %q, want %q", k, val, expected[k])
+		}
+
+		key, err = db.FirstKey()
+		if err != nil {
+			t.Fatalf("FirstKey (re-iteration after Fetch): %v", err)
+		}
+		// We need to use FirstKey/NextKey without interleaving Fetch
+		// to get correct iteration. Let's break and do a clean pass.
+		break
+	}
+
+	// Clean iteration pass without interleaving Fetch
+	seen = make(map[string]bool)
+	key, err = db.FirstKey()
+	if err != nil {
+		t.Fatalf("FirstKey: %v", err)
+	}
+
+	for key != nil {
+		k := string(key)
+		if seen[k] {
+			t.Errorf("Duplicate key in clean iteration: %s", k)
+		}
+		seen[k] = true
+
+		key, err = db.NextKey()
+		if err != nil {
+			t.Fatalf("NextKey: %v", err)
+		}
+	}
+
+	if len(seen) != numEntries {
+		t.Errorf("Iterated %d unique keys, want %d", len(seen), numEntries)
+	}
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
